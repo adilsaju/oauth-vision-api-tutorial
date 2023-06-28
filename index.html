@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html>
   <head>
     <style>
@@ -52,63 +51,84 @@
 		  console.log("Something went wrong!");
 	      });
       }
+// Create canvas element once, outside of event listener
+var canvas = document.createElement("canvas");
 
-      // We only get to work when the vision button is clicked
-      document.querySelector("#vision_button").addEventListener('click', evt => {
-	  // extract image as base64, scale it down to reduce data transfer speed	  
-	  var scale = 0.25;
-	  var canvas = document.createElement("canvas");
-          canvas.width = video.videoWidth * scale;
-          canvas.height = video.videoHeight * scale;
-		  var contextOverlay = canvas.getContext('2d')
-          contextOverlay.drawImage(video, 0, 0, canvas.width, canvas.height);
+// Set canvas dimensions based on video dimensions
+var scale = 0.25;
+canvas.width = video.videoWidth * scale;
+canvas.height = video.videoHeight * scale;
 
-	  // dataUrl contains base64 version of image
-          var dataUrl = canvas.toDataURL();
+// Function to draw green rectangle around object
+function drawBoundingBox(ctx, vertices) {
+  ctx.beginPath();
+  ctx.strokeStyle = "green";
+  ctx.lineWidth = 2;
+  ctx.moveTo(vertices[0].x, vertices[0].y);
+  for (var i = 1; i < vertices.length; i++) {
+    ctx.lineTo(vertices[i].x, vertices[i].y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
 
-	  // Send image to google to analyze
-	  // Documentation of the annotate feature: https://cloud.google.com/vision/docs/reference/rest/v1/images/annotate 
-	  fetch('https://vision.googleapis.com/v1/images:annotate?key=AIzaSyD_7T7pGyVQqeJIBfhL-9nVhotOiy36_HM', {
-	      method: 'POST',
-	      headers: {
-		  'Content-Type': 'application/json'
-	      },
-	      body: JSON.stringify({
-		  requests: [
-		      {
-			  image: {
-			      content: dataUrl.substring('data:image/png;base64,'.length)
-			  },
-			  features: [
-			      {
-				  type: 'FACE_DETECTION',
-				  maxResults: 1
-			      }
-			  ]
-		      }
-		  ]
-	      })
-	  }).then( resp => {
-	      return resp.json();
-	  }).then( json => {
-	      console.log(json);
-	      results.innerHTML = '';
-	      if(json.responses[0].faceAnnotations){
-		  // get the gender of the detected face
-		  var gender = json.responses[0].faceAnnotations[0].joyLikelihood >= json.responses[0].faceAnnotations[0].sorrowLikelihood ? 'female' : 'male';
-		  let description = document.createElement('span');
-		  description.innerText = `IS WEARING CAP: ${json.responses[0].faceAnnotations[0].headwearLikelihood}`;
+// Event listener function
+document.querySelector("#vision_button").addEventListener("click", (evt) => {
+  // Draw video frame on canvas
+  var contextOverlay = canvas.getContext("2d");
+  contextOverlay.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-		  results.append(description);
-	      }
-	      else{
-		  let description = document.createElement('span');
-		  description.innerText = 'No face detected';
-
-		  results.append(description);
-	      }
-	  });
+  // Send image to Google to analyze
+  fetch("https://vision.googleapis.com/v1/images:annotate?key=AIzaSyD_7T7pGyVQqeJIBfhL-9nVhotOiy36_HM", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      requests: [
+        {
+          image: {
+            content: canvas.toDataURL().split(",")[1],
+          },
+          features: [
+            {
+              type: "OBJECT_LOCALIZATION",
+              maxResults: 10,
+            },
+          ],
+        },
+      ],
+    }),
+  })
+    .then((resp) => {
+      return resp.json();
+    })
+    .then((json) => {
+      // Draw bounding boxes on canvas
+      var contextOverlay = canvas.getContext("2d");
+      contextOverlay.clearRect(0, 0, canvas.width, canvas.height);
+      json.responses[0].localizedObjectAnnotations.forEach((obj) => {
+        drawBoundingBox(contextOverlay, obj.boundingPoly.normalizedVertices);
       });
+
+      // Output results
+      console.log(json);
+      results.innerHTML = "";
+      json.responses[0].localizedObjectAnnotations.forEach((obj) => {
+        let description = document.createElement("span");
+        let score = document.createElement("span");
+
+        let div = document.createElement("div");
+        description.innerText = obj.name;
+        score.innerText = obj.score;
+
+        div.append(description, score);
+        results.append(div);
+      });
+    });
+});
+
+
       
     </script>
   </body>
